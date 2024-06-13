@@ -896,7 +896,7 @@ class LDPC5GGNN(GNN_BP):
                  num_mlp_layers=3,
                  num_iter=10,
                  reduce_op= "sum", #"mean",
-                 activation= "relu"#"tanh",
+                 activation= "relu", #"tanh",
                  output_all_iter=False,
                  clip_llr_to=None,
                  use_attributes=False,
