@@ -63,78 +63,15 @@ class MLP(Layer):
         for layer in self._layers:
             outputs = layer(outputs)
         return outputs
+        
 
 class GNN_BP(Layer):
-    """GNN-based message passing decoder.
-
-    Parameters
-    ---------
-    pcm : [num_nc, num_vn], numpy.array
-        The parity-check matrix.
-
-    num_embed_dims: int
-        Number of dimensions of the vertex embeddings.
-
-    num_msg_dims: int
-        Number of dimensions of a message.
-
-    num_hidden_units: int
-        Number of hidden units of the MLPs used to compute
-        messages and to update the vertex embeddings.
-
-    num_mlp_layers: int
-        Number of layers of the MLPs used to compute
-        messages and to update the vertex embeddings.
-
-    num_iter: int
-        Number of iterations.
-
-    reduce_op: str
-        A string defining the vertex aggregation function.
-        Currently, "mean", "max", "min" and "sum" is supported.
-
-    activation: str
-        A string defining the activation function of the hidden MLP layers to
-        be used. Defaults to "relu".
-
-    output_all_iter: Bool
-        Indicates if the LLRs of all iterations should be returned as list
-        or if only the LLRs of the last iteration should be returned.
-
-    clip_llr_to: float or None
-        If set, the absolute value of the input LLRs will be clipped to this value.
-
-    use_attributes: Boolean
-        Defaults to False. If True, trainable node and edge attributes will be
-        applied per node/edge, respectively.
-
-    node_attribute_dims: int
-        Number of dimensions of each node attribute.
-
-    msg_attribute_dims: int
-        Number of dimensions of each message attribute.
-
-    use_bias: Boolean
-        Defaults to False. Indicates if the MLPs should use a bias or not.
-
-    Input
-    -----
-    llr : [batch_size, num_vn], tf.float32
-        Tensor containing the LLRs of all bits.
-
-    Output
-    ------
-    llr_hat: : [batch_size, num_vn], tf.float32
-        Tensor containing the LLRs at the decoder output.
-        If `output_all_iter`==True, a list of such tensors will be returned.
-    """
-    def __init__(self,
-                 pcm,
-                 num_embed_dims,
-                 num_msg_dims,
-                 num_hidden_units,
-                 num_mlp_layers,
-                 num_iter,
+    def __init__(self, code,
+                 num_embed_dims=16,
+                 num_msg_dims=16,
+                 num_hidden_units=64,
+                 num_mlp_layers=2,
+                 num_iter=10,
                  reduce_op="mean",
                  activation="tanh",
                  output_all_iter=False,
@@ -145,16 +82,16 @@ class GNN_BP(Layer):
                  use_bias=False):
 
         super().__init__()
-
+        pcm = tf.convert_to_tensor(code.pc_matrix.numpy(), dtype=tf.float32)
         self._pcm = pcm # Parity check matrix
         self._num_cn = pcm.shape[0] # Number of check nodes
         self._num_vn = pcm.shape[1] # Number of variables nodes
-        self._num_edges = int(np.sum(pcm)) # Number of edges
+        self._num_edges = int(np.sum(self._pcm)) # Number of edges
 
         # Array of shape [num_edges, 2]
         # 1st col = CN id, 2nd col = VN id
         # The ith row of this array defines the ith edge.
-        self._edges = np.stack(np.where(pcm), axis=1)
+        self._edges = np.stack(np.where(self._pcm), axis=1)
 
         # Create 2D ragged tensor of shape [num_cn,...]
         # cn_edges[i] contains the edge ids for CN i
@@ -290,9 +227,39 @@ class GNN_BP(Layer):
                 llr_hat.append(self.embed_to_llr(h_vn))
 
         if not self._output_all_iter:
-            llr_hat = self.embed_to_llr(h_vn)
+            x_hat = self.embed_to_llr(h_vn)
 
-        return llr_hat
+        return x_hat
+
+    # def call(self, llr):
+    #     """Run the decoder."""
+    #     batch_size = tf.shape(llr)[0]
+
+    #     # Initialize vertex embeddings
+    #     if self._clip_llr_to is not None:
+    #         llr = tf.clip_by_value(llr, -self._clip_llr_to, self._clip_llr_to)
+
+    #     h_vn = self.llr_to_embed(llr)
+    #     h_cn = tf.zeros([batch_size, self._num_cn, self._num_embed_dims])
+
+    #     # BP iterations
+    #     if self._output_all_iter:
+    #         llr_hat = []
+    #     for i in range(self._num_iter):
+
+    #         # Update CN embeddings
+    #         h_cn = self.update_h_cn(h_vn, h_cn)
+
+    #         # Update VNs
+    #         h_vn = self.update_h_vn(h_cn, h_vn)
+
+    #         if self._output_all_iter:
+    #             llr_hat.append(self.embed_to_llr(h_vn))
+
+    #     if not self._output_all_iter:
+    #         llr_hat = self.embed_to_llr(h_vn)
+
+    #     return llr_hat
 
 class UpdateEmbeddings(Layer):
     """Update vertex embeddings of the GNN BP decoder.
